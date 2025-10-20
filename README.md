@@ -71,7 +71,71 @@ http://192.168.0.122:5678
 
 #### 3.1 Install Prerequisites
 ```bash
+# tools for venv
 sudo apt update
-sudo apt install python3 python3-pip -y
-pip3 install youtube-transcript-api fastapi uvicorn
+sudo apt install -y python3-venv
+
+# make a project dir
+mkdir -p ~/yt-transcript && cd ~/yt-transcript
+
+# create + activate venv
+python3 -m venv .venv
+source .venv/bin/activate
+
+# upgrade pip + install packages inside the venv
+pip install --upgrade pip wheel
+pip install youtube-transcript-api fastapi "uvicorn[standard]"
 ```
+
+#### 3.2 Create the file ~/yt-transcript/transcript_api.py (source code is provided in this repository)
+#### 3.3 Run as a systemd service. Create file /etc/systemd/system/transcript-api.service:
+
+```ini
+[Unit]
+Description=YouTube Transcript API (FastAPI + youtube-transcript-api)
+After=network.target
+
+[Service]
+User=kostiantyn_lazurenko
+WorkingDirectory=/home/kostiantyn_lazurenko/yt-transcript
+# Use the venv's Python so we don't touch the system Python
+ExecStart=/home/kostiantyn_lazurenko/yt-transcript/.venv/bin/python -m uvicorn transcript_api:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+# Webshare credentials (rotate residential)
+Environment=WEBSHARE_USER={here comes your webshare username}
+Environment=WEBSHARE_PASS={here comes your webshare password}
+Environment=WEBSHARE_LOCATIONS=de,us
+
+# keep your existing vars (CHANNELS_API_KEY etc.)
+
+[Install]
+WantedBy=multi-user.target
+```
+
+#### 3.4 Enable the service
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable transcript-api
+sudo systemctl start transcript-api
+```
+
+### 4. Setup n8n workflow
+```
+http://192.168.0.122:5678
+```
+#### 4.1 Go to the Credentials and create credentials for the following services 
+##### 4.1.1 Youtube Account (Youtube OAuth 2 API)
+##### 4.1.2 Telegram Account (Telegram API)
+##### 4.1.3 OpenAi Account (OpenAi)
+
+#### 4.1 Create new workflow
+#### 4.2 Click on '...' -> "Import from file" and select the yt_digest.public.json file from this repository
+#### 4.3 Open 'Set Config' node and replace apiKey with your Google Credentials
+#### 4.4 Open 'Get Subscriptions' node and set your Youtube Auth 2 crenedtials
+#### 4.5 Open two last Telegram related nodes and replace {{TELEGRAM_CHAT_ID}} with your real chat id (one way to get it is to call https://api.telegram.org/bot<BOT_TOKEN>/getUpdates endpoint and look for the value "chat": { "id": 123456789, "first_name": "YourName", ... } in the json response). Also connect your telegram credentials
+#### 4.6 Open 'OpenAI Chat Model' node and connect your openAI credentials
+#### 4.7 Open 'Get Captions' node and ensure it calls correct endpoint (localhost or ip and port)
+#### 4.8 Add triggers for your workflow (like 'schedule trigger' or whatever you need)
+
+### Use workflow and enjoy!

@@ -1,0 +1,757 @@
+{
+  "name": "Entertainment Digest",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -416,
+        208
+      ],
+      "name": "When clicking \u2018Execute workflow\u2019"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ced4ef90-1333-4f43-b928-e60b5011640e",
+              "name": "apiKey",
+              "value": "{YOUR GOOGLE API KEY GOES IN HERE}",
+              "type": "string"
+            },
+            {
+              "id": "93828fa4-f40d-4e95-ab1b-953549ffe789",
+              "name": "langList",
+              "value": "en,uk,ua",
+              "type": "string"
+            },
+            {
+              "id": "80b39f83-b2b9-436b-9e76-d7b53da31b2f",
+              "name": "lastDays",
+              "value": 2,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -208,
+        208
+      ],
+      "name": "Set - Config"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "=items",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        768,
+        208
+      ],
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "sortFieldsUi": {
+          "sortField": [
+            {
+              "fieldName": "publishedAt",
+              "order": "descending"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.sort",
+      "typeVersion": 1,
+      "position": [
+        1456,
+        208
+      ],
+      "name": "Sort by date (DESC)"
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:8000/transcript?videoId={{$json.videoId}}&langs={{$json.langs}}&plain=true",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        112,
+        640
+      ],
+      "name": "Get captions",
+      "retryOnFail": true,
+      "waitBetweenTries": 2000,
+      "maxTries": 2,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Hard-code language list\nconst langs = $(\"Set - Config\").item.json.langList\n  .split(',')\n  .map(s => s.trim())\n  .filter(Boolean);\n\n// Add langs to current item\nreturn {\n  ...$json,\n  langs\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -96,
+        640
+      ],
+      "name": "Add langs field"
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet"
+            },
+            {
+              "name": "channelId",
+              "value": "={{$json.channelId}}"
+            },
+            {
+              "name": "order",
+              "value": "date"
+            },
+            {
+              "name": "type",
+              "value": "video"
+            },
+            {
+              "name": "maxResults",
+              "value": "3"
+            },
+            {
+              "name": "key",
+              "value": "={{ $('Set - Config').first().json.apiKey }}"
+            },
+            {
+              "name": "publishedAfter",
+              "value": "={{ (new Date(Date.now() - $('Set - Config').item.json.lastDays*24*60*60*1000)).toISOString() }}"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 2000
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        496,
+        208
+      ],
+      "name": "YT Request Channel New Uploads",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000,
+      "maxTries": 2
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "938d3723-33d3-4dcb-a5b7-bb318676a7d9",
+              "leftValue": "={{ $json.noCaptions}}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        528,
+        640
+      ],
+      "name": "If no captions"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Summarize this transcript as Telegram-safe HTML:\n\n<b>Channel:</b>{{$json.channelTitle}}<br>\n<b><a href=\"{{ $json.url }}\"> {{ $json.title }} </a></b><br>\n\u2022 5 key bullets (each starts with \"\u2022 \")<br><br>\n<b>Takeaways:</b><br><br>\n\u2022 3 short takeaways<br>\n<b>Quotable insights:</b><br>\n\u2022 2 quotes\n\nTranscript:\n{{ $json.transcript }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You summarize transcripts accurately and concisely. Always keep under 200 words."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        768,
+        656
+      ],
+      "name": "Basic LLM Chain",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        768,
+        912
+      ],
+      "name": "OpenAI Chat Model"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => {\n  const out = {\n    success: false,\n    content: \"\",\n    error: \"\"\n  };\n\n  // success case: text is present\n  if (item.json.text) {\n    out.success = true;\n    out.content = item.json.text;\n  } \n  // error case: OpenAI or HTTP error\n  else if (item.json.error) {\n    out.error = item.json.error.message || String(item.json.error);\n  } \n  else {\n    out.error = \"Empty or unexpected response\";\n  }\n\n  return { json: out };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        656
+      ],
+      "name": "Map OpenAI response"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "52bd11a1-6458-4dd4-89be-395dbf7d7dfc",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1536,
+        656
+      ],
+      "name": "If openAI provided OK response"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const chatId = 455634904; // or pass it in your item\n\nlet html = $json.content || \"\";\n\n// 1) strip code fences\nhtml = html.replace(/^```html\\s*/i, \"\").replace(/```$/i, \"\").trim();\n\n// 2) remove unsupported containers\nhtml = html.replace(/<\\/?(div|p)[^>]*>/gi, \"\");\n\n// 3) convert lists to bullets (we'll output \\n, not <br>)\nhtml = html\n  .replace(/<\\s*ul[^>]*>/gi, \"\")\n  .replace(/<\\s*ol[^>]*>/gi, \"\")\n  .replace(/<\\s*\\/\\s*(ul|ol)\\s*>/gi, \"\")\n  .replace(/<\\s*li[^>]*>/gi, \"\u2022 \")\n  .replace(/<\\s*\\/\\s*li\\s*>/gi, \"\\n\");\n\n// 4) normalize line breaks to \\n (no <br> anywhere)\nhtml = html.replace(/\\r?\\n+/g, \"\\n\").replace(/\\n{3,}/g, \"\\n\\n\");\n\n// 5) keep <a> but drop all attributes except href and strip formatting inside links\nhtml = html.replace(/<a\\s+[^>]*href=\"([^\"]+)\"[^>]*>([\\s\\S]*?)<\\/a>/gi, (m, href, inner) => {\n  const text = inner.replace(/<\\/?[^>]+>/g, \"\"); // no tags inside link text\n  return `<a href=\"${href}\">${text}</a>`;\n});\n\n// 6) remove any remaining tags except <a>, <b>, <i>, <u>, <s>, <code>, <pre>, <blockquote>\nhtml = html.replace(/<(?!\\/?(a|b|i|u|s|code|pre|blockquote)\\b)[^>]*>/gi, \"\");\n\n// 7) ensure a title link exists at top (WITHOUT <b> wrapper to avoid nesting issues)\nif (!/^<a\\s+href=/i.test(html) && $json.url && $json.title) {\n  const safeTitle = String($json.title).replace(/[<&]/g, c => (c === \"<\" ? \"&lt;\" : \"&amp;\"));\n  html = `<a href=\"${$json.url}\">${safeTitle}</a>\\n` + html;\n}\n\n// 8) collapse excessive blank lines\nhtml = html.replace(/\\n{3,}/g, \"\\n\\n\");\n\n// 9) Telegram limit (~4096). Keep a margin.\nconst MAX = 3800;\nif (html.length > MAX) html = html.slice(0, MAX - 1) + \"\u2026\";\n\nreturn {\n  json: {\n    success: true,\n    chatId,\n    text: html, // Use with Telegram \"Send a text message\" (Parse Mode = HTML)\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1824,
+        640
+      ],
+      "name": "Format in HTML"
+    },
+    {
+      "parameters": {
+        "chatId": "{{TELEGRAM_CHAT_ID}}",
+        "text": "=Error occured when calling openAPI {{$json.n.error}}, check your balance https://platform.openai.com/settings/organization/billing/overview",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2080,
+        864
+      ],
+      "name": "Send error message on openAPI call"
+    },
+    {
+      "parameters": {
+        "chatId": "{{TELEGRAM_CHAT_ID}}",
+        "text": "={{ $json.success \n   ? \"\u2705 Transcript ready:\\n\\n\" + $json.text \n   : \"\u274c Transcript failed:\\n\\n\" + $json.error }}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2080,
+        640
+      ],
+      "name": "Send a summary"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/channels",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -32,
+        1840
+      ],
+      "name": "Request Channels"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -336,
+        624
+      ],
+      "name": "Loop Over Videos"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Replace the string below with the exact name of the node that produced {videoId,title,url,publishedAt}\nconst prev = $('Map Video Response').item.json;\n\n// When \"Continue On Fail\" is ON, HTTP node outputs { error: {...} } on non-2xx\nconst err = $json.error;\nconst text = $json.text; // present on 200 (plain=true)\n\nif (err || !text) {\n  // 404 or any other failure \u2192 mark and skip later\n  return {\n    ...prev,\n    noCaptions: true,\n    errorStatus: err?.status || null,\n    errorMessage: err?.message || null,\n  };\n}\n\nreturn {\n  ...prev,\n  transcript: text,         // plain text from your API\n  noCaptions: false,\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        640
+      ],
+      "name": "Map Transcript Response"
+    },
+    {
+      "parameters": {
+        "jsCode": "// If the HTTP node returns one item like: [{ json: { channels: [...] } }]\nconst first = $input.first().json;\nconst ids = Array.isArray(first.channels) ? first.channels : [];\n\n// Emit one item per channelId\nreturn ids.map(id => ({ json: { channelId: id } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        192,
+        1840
+      ],
+      "name": "Map Channels Response"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const it = $json.snippet || {};\nconst videoId = $json.id.videoId;\nconst channelTitle = $json.snippet.channelTitle;\nconst title = it.title || '(no title)';\nconst publishedAt = it.publishedAt || '';\nconst url = videoId ? `https://www.youtube.com/watch?v=${videoId}` : '';\nreturn { json: { videoId, channelTitle, title, url, publishedAt } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        208
+      ],
+      "name": "Map Video Response"
+    },
+    {
+      "parameters": {
+        "content": "Get channels",
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -752,
+        -48
+      ],
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "Get Videos"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -752,
+        208
+      ],
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "Transcribe Videos",
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -752,
+        544
+      ],
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/subscriptions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "youTubeOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet,contentDetails"
+            },
+            {
+              "name": "mine",
+              "value": "true"
+            },
+            {
+              "name": "maxResults",
+              "value": "40"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "off"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -16,
+        -32
+      ],
+      "name": "Get Subscriptions"
+    },
+    {
+      "parameters": {
+        "maxItems": 3
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        1664,
+        208
+      ],
+      "name": "Limit Videos Number"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collect channel IDs from all pages\nconst out = [];\nfor (const page of $input.all()) {\n  const items = page.json.items || [];\n  for (const it of items) {\n    const cid = it?.snippet?.resourceId?.channelId;\n    if (cid && it?.contentDetails.newItemCount > 0) out.push({ json: { channelId: cid } });\n  }\n}\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        192,
+        -32
+      ],
+      "name": "Extract channel Ids with new content"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking \u2018Execute workflow\u2019": {
+      "main": [
+        [
+          {
+            "node": "Set - Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Config": {
+      "main": [
+        [
+          {
+            "node": "Get Subscriptions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Map Video Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sort by date (DESC)": {
+      "main": [
+        [
+          {
+            "node": "Limit Videos Number",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get captions": {
+      "main": [
+        [
+          {
+            "node": "Map Transcript Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add langs field": {
+      "main": [
+        [
+          {
+            "node": "Get captions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YT Request Channel New Uploads": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If no captions": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Videos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Map OpenAI response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map OpenAI response": {
+      "main": [
+        [
+          {
+            "node": "If openAI provided OK response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If openAI provided OK response": {
+      "main": [
+        [
+          {
+            "node": "Format in HTML",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send error message on openAPI call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format in HTML": {
+      "main": [
+        [
+          {
+            "node": "Send a summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a summary": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Videos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request Channels": {
+      "main": [
+        [
+          {
+            "node": "Map Channels Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Videos": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Add langs field",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Transcript Response": {
+      "main": [
+        [
+          {
+            "node": "If no captions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Channels Response": {
+      "main": [
+        []
+      ]
+    },
+    "Map Video Response": {
+      "main": [
+        [
+          {
+            "node": "Sort by date (DESC)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Subscriptions": {
+      "main": [
+        [
+          {
+            "node": "Extract channel Ids with new content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit Videos Number": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Videos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract channel Ids with new content": {
+      "main": [
+        [
+          {
+            "node": "YT Request Channel New Uploads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}
