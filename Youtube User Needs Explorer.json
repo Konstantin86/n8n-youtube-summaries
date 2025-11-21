@@ -1,0 +1,518 @@
+{
+  "name": "Youtube User Needs Explorer",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ced4ef90-1333-4f43-b928-e60b5011640e",
+              "name": "channelIds",
+              "value": "[{Channel Ids (coma-separated) go here...}]",
+              "type": "array"
+            },
+            {
+              "id": "93828fa4-f40d-4e95-ab1b-953549ffe789",
+              "name": "langList",
+              "value": "en,uk",
+              "type": "string"
+            },
+            {
+              "id": "152e1e09-d7d0-431c-8746-5396a34bb524",
+              "name": "apiKey",
+              "value": "{Google api key goes here...}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -272,
+        -400
+      ],
+      "id": "98479cb6-d4d9-4465-858e-f1ff420d4862",
+      "name": "Set - Config"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an expert YouTube Content Strategist and Data Analyst.\n\nYour task is to analyze a dataset of YouTube comments from popular videos in a specific niche. Your goal is to extract actionable insights to help a creator plan their next viral video.\n\n## INSTRUCTIONS:\n1. **FILTER THE NOISE:** Completely ignore generic praise (e.g., \"Great video,\" \"First!\", \"Love this\"), generic hate, or spam. Focus only on comments that contain substance.\n2. **IDENTIFY PAIN POINTS:** Look for phrases indicating frustration, confusion, or roadblocks (e.g., \"I still don't understand how...\", \"I tried this but...\", \"Why doesn't this work for...\").\n3. **SPOT PATTERNS:** If multiple users ask about the same concept, flag this as a high-priority topic.\n4. **DETECT CONTENT GAPS:** Identify what users say is *missing* from the current video (e.g., \"I wish you showed the advanced settings,\" \"Can you do a part 2 on X?\").\n\n## OUTPUT FORMAT:\nProvide a concise summary in the following Markdown format:\n\n### 🔥 Top 3 Burning Questions / Pain Points\n(List the 3 most common technical problems or conceptual misunderstandings found in the comments)\n\n### 💡 Most Requested Topics\n(List specific requests for future tutorials or explanations)\n\n### 📈 Video Opportunity\n(Based on the analysis, suggest 1 specific title and a 1-sentence hook for a new video that would solve these problems)\n\n\n**Here is the JSON of comments, each comment is newline separated:**\n{{ $json.allCommentText }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are an expert YouTube Content Strategist and Data Analyst."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        1520,
+        -400
+      ],
+      "id": "b037e4bb-b32b-4d42-8d2b-686309e21b75",
+      "name": "Basic LLM Chain",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1600,
+        -176
+      ],
+      "id": "ddb7827a-c08f-4022-aa73-6c8180c29f65",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "1Xpgh4WAXfmNTYRy",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "channelIds",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -48,
+        -400
+      ],
+      "id": "a4bded3a-f380-445c-825a-cbad3714efb2",
+      "name": "Split Channels"
+    },
+    {
+      "parameters": {
+        "chatId": "455634904",
+        "text": "={{ $json.success \n   ? \"✅ Audience Interests ready:\\n\\n\" + $json.content \n   : \"❌ Audience Interests failed:\\n\\n\" + $json.error }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2320,
+        -400
+      ],
+      "id": "4df84ed0-3a97-4de5-9694-bd7fc8a953c0",
+      "name": "Send video summary and comment",
+      "webhookId": "f0c44d18-cf91-4dd0-93f5-8b04bdda3adf",
+      "credentials": {
+        "telegramApi": {
+          "id": "jR5j9qirgmGELzO5",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => {  \n\n  \n  const out = {\n    success: false,\n    content: \"\",\n    error: \"\"\n  };\n\n  // success case: text is present\n  if (item.json.text) {\n    out.success = true;\n    out.content = item.json.text;\n  } \n  // error case: OpenAI or HTTP error\n  else if (item.json.error) {\n    out.error = item.json.error.message || String(item.json.error);\n  } \n  else {\n    out.error = \"Empty or unexpected response\";\n  }\n\n  return { json: out };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1872,
+        -400
+      ],
+      "id": "29dbd3a2-fcd4-4e31-a237-0a6f0253bf3c",
+      "name": "Map OpenAI response1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "52bd11a1-6458-4dd4-89be-395dbf7d7dfc",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2096,
+        -400
+      ],
+      "id": "76d493e1-105b-43fe-b9d2-fb51e148ddf8",
+      "name": "If openAI provided OK response1"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "items",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        400,
+        -400
+      ],
+      "id": "ac991b05-c7da-427b-ba9c-810ae4e26740",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet"
+            },
+            {
+              "name": "channelId",
+              "value": "={{$json.channelIds}}"
+            },
+            {
+              "name": "order",
+              "value": "viewCount"
+            },
+            {
+              "name": "type",
+              "value": "video"
+            },
+            {
+              "name": "maxResults",
+              "value": "10"
+            },
+            {
+              "name": "key",
+              "value": "={{ $('Set - Config').first().json.apiKey }}"
+            },
+            {
+              "name": "publishedAfter",
+              "value": "={{ (new Date(Date.now() - 180*24*60*60*1000)).toISOString() }}"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 2000
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        176,
+        -400
+      ],
+      "id": "a57f09fe-98d4-4bf2-9100-ce84616273de",
+      "name": "Get Channel Top Videos last 90d",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000,
+      "maxTries": 2
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/commentThreads",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet"
+            },
+            {
+              "name": "videoId",
+              "value": "={{$json.id.videoId}}"
+            },
+            {
+              "name": "order",
+              "value": "relevance"
+            },
+            {
+              "name": "maxResults",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 2000
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        624,
+        -400
+      ],
+      "id": "a7df552f-90b6-4f43-8953-f66e947bac53",
+      "name": "Get Top Relevance Comments",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "hzrLtqq1lsqy6R68",
+          "name": "Query Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "items",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        848,
+        -400
+      ],
+      "id": "672cb6d0-77cb-4cb3-b353-a60684d40ff0",
+      "name": "Split Out1"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "snippet.topLevelComment.snippet.textDisplay",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1072,
+        -400
+      ],
+      "id": "5c933ae1-454a-4884-a81b-441a644a51ce",
+      "name": "Split Out2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nlet combinedText = \"\";\n\n// 'items' is the array of all items passed into this node\nfor (const item of $input.all()) {\n  // Get the comment text from the exact path\n  const text = item.json['snippet.topLevelComment.snippet.textDisplay'];\n  \n  // Add the text and a newline character\n  combinedText += text + \"\\n\";\n}\n\n// Return a new, single item.\n// The next node can access this as '{{ $json.allCommentText }}'\nreturn [\n  {\n    json: {\n      allCommentText: combinedText.trim() // .trim() removes any trailing newline\n    }\n  }\n];\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1296,
+        -400
+      ],
+      "id": "5b629922-8e96-4ca4-9702-0f235be51656",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -496,
+        -400
+      ],
+      "id": "eb4a2a5a-4d2b-4e95-8849-125b79cdc7a1",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "content": "\n\"channelIds\": \n[channel ids...],",
+        "height": 320,
+        "width": 528
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -624,
+        -896
+      ],
+      "id": "3ce57841-ddee-4e8d-bf21-d7d0ece090ef",
+      "name": "Sticky Note"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Set - Config": {
+      "main": [
+        [
+          {
+            "node": "Split Channels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Map OpenAI response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Channels": {
+      "main": [
+        [
+          {
+            "node": "Get Channel Top Videos last 90d",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map OpenAI response1": {
+      "main": [
+        [
+          {
+            "node": "If openAI provided OK response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If openAI provided OK response1": {
+      "main": [
+        [
+          {
+            "node": "Send video summary and comment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Get Top Relevance Comments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Channel Top Videos last 90d": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Top Relevance Comments": {
+      "main": [
+        [
+          {
+            "node": "Split Out1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out1": {
+      "main": [
+        [
+          {
+            "node": "Split Out2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out2": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Set - Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "53c0db66-dee3-4d6a-b17b-a88b38694dd9",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0b89605a61b6eeef8f6b05c6fd13dd2c50e6e09602e476e5a33572c8f2874e2a"
+  },
+  "id": "BJT47qybQAz0FjDY",
+  "tags": []
+}
