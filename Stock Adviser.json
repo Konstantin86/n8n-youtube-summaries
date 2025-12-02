@@ -1,0 +1,1533 @@
+{
+  "name": "Stock Adviser",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -176
+      ],
+      "id": "de134d3c-40f7-417b-9e18-c62cebac23c5",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "url": "https://api.api-ninjas.com/v1/sp500",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        -64
+      ],
+      "id": "194a14dd-8b62-4ae4-828d-aa8511a730c0",
+      "name": "Get S&P500 tickers",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kyVNvvMVW7D5ODxF",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Input: The clean JSON from API Ninjas\nconst allStocks = $input.all();\n\n// 1. Filter for Technology Sector\n// API Ninjas uses \"Information Technology\"\nconst techStocks = allStocks.filter(stock => \n  stock.json.sector === \"Information Technology\"\n);\n\n// 2. Limit to Top 10-25 to save Finnhub credits\n// (Optional: Shuffle them if you want a random sample each day)\nconst candidates = techStocks.slice(0, 100);\n\nreturn candidates.map(stock => ({\n  json: {\n    symbol: stock.json.ticker,  // Remap 'ticker' to 'symbol' for Finnhub\n    name: stock.json.company_name,\n    sector: stock.json.sector\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        -64
+      ],
+      "id": "a3164b2a-c97a-4d8a-962c-e5bb83721ce0",
+      "name": "Filter Technology Stocks"
+    },
+    {
+      "parameters": {
+        "url": "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        -272
+      ],
+      "id": "5b8da711-62be-4064-a1fe-ba937a71ffcd",
+      "name": "Get Fear&Greed Index"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        672,
+        -80
+      ],
+      "id": "66a5d61a-b679-4034-9aae-212c6b6de11b",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "url": "https://finnhub.io/api/v1/stock/metric",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "metric",
+              "value": "all"
+            },
+            {
+              "name": "symbol",
+              "value": "={{ $json.symbol }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        -720
+      ],
+      "id": "53f58c95-ba45-4224-ac91-f785d2365a17",
+      "name": "Finnhub: Get Fundamentals",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "dIxwVU7guzLMqmrT",
+          "name": "Header Auth Finnhub"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Get the metric object from Finnhub\nconst metric = $json.metric;\nconst symbol = $json.symbol;\n\n// Initialize Score\nlet score = 0;\nlet reasons = [];\n\n// --- PILLAR 1: VALUE (Max 40 pts) ---\n// P/E Ratio: We want \"Reasonable\", not just \"Low\".\n// < 15 is great value (+20), 15-30 is fair for Tech (+10), > 50 is expensive (-10)\nconst pe = metric.peTTM || 0;\nconst eps = metric.epsTTM || 0;\n\nif (pe > 0 && pe < 15) { score += 20; reasons.push(\"Great Value\"); }\nelse if (pe >= 15 && pe < 30) { score += 10; reasons.push(\"Fair Value\"); }\nelse if (pe > 60) { score -= 10; reasons.push(\"Overvalued\"); }\n\n// Price to Sales (Good for checking if a non-profitable tech stock is hyped)\n// < 3 is cheap, > 10 is very expensive\nconst ps = metric.psTTM || 0;\nif (ps < 3) score += 10; \nelse if (ps > 10) score -= 5;\n\n// --- PILLAR 2: QUALITY (Max 30 pts) ---\n// ROE (Return on Equity): Critical for Tech. > 15% is the target.\nconst roe = metric.roeTTM || 0;\nif (roe > 20) { score += 20; reasons.push(\"High Efficiency (ROE > 20%)\"); }\nelse if (roe > 10) { score += 10; }\n\n// Debt to Equity: Avoid debt-heavy companies (> 100% or 1.0)\n// Note: Finnhub sometimes returns this as 'longTermDebt/equity' or similar\nconst debtEq = metric['totalDebt/totalEquityAnnual'] || 0;\nif (debtEq < 0.5) score += 10; // Very safe\nelse if (debtEq > 1.5) score -= 10; // Risky leverage\n\n// --- PILLAR 3: GROWTH (Max 30 pts) ---\n// EPS Growth (Year over Year)\nconst epsGrowth = metric.epsGrowthTTMYoy || 0;\nif (epsGrowth > 20) { score += 20; reasons.push(\"High Growth (>20%)\"); }\nelse if (epsGrowth > 5) { score += 10; reasons.push(\"Moderate Growth\"); }\nelse if (epsGrowth < 0) { score -= 20; reasons.push(\"Shrinking Earnings\"); }\n\n// --- THE VERDICT ---\n// You can adjust this threshold. 50 is a \"Solid Buy\".\nconst isBuy = score >= 50;\n\nreturn {\n  json: {\n    symbol: symbol,\n    fundamental_score: score,\n    pass_filter: isBuy,\n    key_metrics: {\n      PE: pe.toFixed(2),\n      EPS: eps.toFixed(2),\n      ROE: roe.toFixed(2),\n      Growth: epsGrowth.toFixed(2) + \"%\"\n    },\n    analysis: reasons.join(\", \")\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        -720
+      ],
+      "id": "6e46ff63-b823-47d7-92fd-d436d12e04c9",
+      "name": "Calculate Fundamental Score"
+    },
+    {
+      "parameters": {
+        "amount": 1.5
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        896,
+        -720
+      ],
+      "id": "423bb668-2c2e-47d4-9cf5-14697a2fbe85",
+      "name": "Wait",
+      "webhookId": "328addae-488e-44db-90c6-4de883d233b3"
+    },
+    {
+      "parameters": {
+        "url": "https://api.twelvedata.com/rsi",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "symbol",
+              "value": "={{$json.symbol}}"
+            },
+            {
+              "name": "interval",
+              "value": "1day"
+            },
+            {
+              "name": "time_period",
+              "value": "14"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2688,
+        -224
+      ],
+      "id": "e7c637d4-de42-40d9-af83-f8b2ec24a6b8",
+      "name": "Get TA data: RSI",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "P3dfiyOB2z5M25TV",
+          "name": "Query Auth twelvedata"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cf9ec996-56af-4c55-9364-b9d3c60e03e6",
+              "name": "rsi_data",
+              "value": "={{$json}}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2912,
+        -224
+      ],
+      "id": "67766e97-08d2-448f-810b-68f6b523adcc",
+      "name": "Map to rsi_data"
+    },
+    {
+      "parameters": {
+        "url": "https://api.twelvedata.com/macd",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "symbol",
+              "value": "={{$json.symbol}}"
+            },
+            {
+              "name": "interval",
+              "value": "1day"
+            },
+            {
+              "name": "fast_period",
+              "value": "12"
+            },
+            {
+              "name": "slow_period",
+              "value": "26"
+            },
+            {
+              "name": "signal_period",
+              "value": "9"
+            }
+          ]
+        },
+        "options": {
+          "response": {}
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2688,
+        -704
+      ],
+      "id": "27040705-8997-48ad-9adf-4bf0194e54d3",
+      "name": "Get TA data: MACD",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "P3dfiyOB2z5M25TV",
+          "name": "Query Auth twelvedata"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cf9ec996-56af-4c55-9364-b9d3c60e03e6",
+              "name": "macd_data",
+              "value": "={{$json}}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2912,
+        -704
+      ],
+      "id": "0c9fcc3b-6fd5-48bf-9a24-6ba854fe9fb7",
+      "name": "Map to macd_data"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cf9ec996-56af-4c55-9364-b9d3c60e03e6",
+              "name": "ema_data",
+              "value": "={{$json}}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2912,
+        -1104
+      ],
+      "id": "2402370c-6831-4570-9ad7-90791f75c5fd",
+      "name": "Map to ema_data"
+    },
+    {
+      "parameters": {
+        "url": "https://api.twelvedata.com/ema",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "symbol",
+              "value": "={{$json.symbol}}"
+            },
+            {
+              "name": "interval",
+              "value": "1day"
+            },
+            {
+              "name": "time_period",
+              "value": "200"
+            }
+          ]
+        },
+        "options": {
+          "response": {}
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2688,
+        -1088
+      ],
+      "id": "dbf73247-e809-4eef-b24f-00b45efe41e7",
+      "name": "Get TA data: EMA",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "P3dfiyOB2z5M25TV",
+          "name": "Query Auth twelvedata"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0c5562dd-5cd8-481f-ac48-e69503564166",
+              "leftValue": "={{ $json.fundamental_score }}",
+              "rightValue": 45,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1568,
+        -720
+      ],
+      "id": "8a1f40f3-7f81-414a-89dc-3c0e61cfab9e",
+      "name": "Filter fundamentally risky stocks"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "var fundData = $('Merge Metrics and Quote').item.json;\n\nconst ta = $json;\nconst rsi = parseFloat(ta.rsi_data?.values?.[0]?.rsi || '50');\nconst macd = parseFloat(ta.macd_data?.values?.[0]?.macd || '0');\nconst macdSignal = parseFloat(ta.macd_data?.values?.[0]?.macd_signal || '0');\nconst ema200 = parseFloat(ta.ema_data?.values?.[0]?.ema || '0');\nconst symbol = ta.rsi_data?.meta?.symbol;\nconst currentPrice = fundData.c;\nconst fundScore = fundData.fundamental_score || 0;\n\n  // --- 4. SCORING LOGIC ---\n  let techScore = 0;\n  let signals = [];\n\n  // A. MOMENTUM (RSI)\n  if (rsi < 30) {\n      techScore += 30;\n      signals.push(\"Oversold (RSI < 30)\");\n  } else if (rsi < 45 && rsi > 30) {\n      techScore += 10; // Dip in uptrend\n  } else if (rsi > 70) {\n      techScore -= 10; // Overbought risk\n  }\n\n  // B. TREND (MACD)\n  const histogram = macd - macdSignal;\n  if (histogram > 0) {\n      techScore += 20;\n      if (histogram < 0.5) signals.push(\"MACD Bullish Cross\");\n  }\n\n  // C. DIRECTION (EMA 200)\n  // Only check this if we successfully retrieved a price > 0\n  if (currentPrice > 0) {\n      if (currentPrice > ema200) {\n          techScore += 20;\n          signals.push(\"Uptrend (Above EMA200)\");\n      } else {\n          techScore -= 15; // Trading below 200 EMA is risky\n      }\n  }\n\n  // --- 5. FINAL OUTPUT ---\n  return {\n    json: {\n      symbol: symbol,\n      total_score: fundScore + techScore, // Grand Total\n      fundamental_score: fundScore,\n      technical_score: techScore,\n      signals: signals.join(\", \"),\n      details: {\n          price: currentPrice,\n          rsi: rsi.toFixed(2),\n          macd: macd.toFixed(4),\n          ema_200: ema200.toFixed(2),\n          pe: fundData.key_metrics?.PE || \"N/A\"\n      }\n    }\n  };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3360,
+        -928
+      ],
+      "id": "2b45dc49-8f50-4a3c-9c44-54b9985170b6",
+      "name": "Calculate TA Score"
+    },
+    {
+      "parameters": {
+        "url": "https://finnhub.io/api/v1/quote",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "symbol",
+              "value": "={{ $json.symbol }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2016,
+        -224
+      ],
+      "id": "037792e3-3924-47e3-9932-44451d6a4f2b",
+      "name": "Finnhub: Get Quote",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "dIxwVU7guzLMqmrT",
+          "name": "Header Auth Finnhub"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2240,
+        -720
+      ],
+      "id": "528fb99e-f072-4c59-8c85-e1cbfa7ae6aa",
+      "name": "Merge Metrics and Quote"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2464,
+        -1104
+      ],
+      "id": "b37cc32d-c854-4efe-8596-41767712b0d3",
+      "name": "Wait1",
+      "webhookId": "aaac3ca9-e300-4e6c-b926-ea625dd65097"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2464,
+        -704
+      ],
+      "id": "7120a20a-94fd-4672-a420-fef713fbd506",
+      "name": "Wait2",
+      "webhookId": "80f4a195-0314-4b50-8383-f6f382b2b748"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2464,
+        -224
+      ],
+      "id": "04c09f0a-7bfb-4e11-8586-53a870a2dc5e",
+      "name": "Wait3",
+      "webhookId": "7acf000f-516e-4ee8-95d7-319cf0e851c3"
+    },
+    {
+      "parameters": {
+        "amount": 1.5
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1792,
+        -224
+      ],
+      "id": "af4dba71-1a34-4b07-a235-0dd3a28c8b3b",
+      "name": "Wait4",
+      "webhookId": "f42ea51b-9f97-47d2-8881-70699d81f1fb"
+    },
+    {
+      "parameters": {
+        "chatId": "455634904",
+        "text": "={{ $json.html_message }}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        5280,
+        -256
+      ],
+      "id": "fbcc569d-bd41-4a33-95cd-e3856b184fd4",
+      "name": "Send a summary",
+      "webhookId": "4c36dfd2-f836-4090-b067-73a074cb0578",
+      "credentials": {
+        "telegramApi": {
+          "id": "jR5j9qirgmGELzO5",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://www.alphavantage.co/query",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "function",
+              "value": "NEWS_SENTIMENT"
+            },
+            {
+              "name": "tickers",
+              "value": "={{ $json.symbol }}"
+            },
+            {
+              "name": "limit",
+              "value": "10"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4032,
+        -240
+      ],
+      "id": "c3ae921c-800f-4c21-841a-847c55490b5b",
+      "name": "AlphaVantage: Get News & Sentiment",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "iXHViXIVIBR8I6o7",
+          "name": "Query Auth AlphaVantage"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const taScoreModel = $('Calculate TA Score');\nconst targetSymbol = taScoreModel.item.json.symbol;\n\nlet newsCount = 0;\nlet totalNewsScore = 0;\n\nfor (const article of $json.feed) {\n    // Find the score specifically for OUR ticker (articles often mention multiple)\n    const sentimentObj = article.ticker_sentiment.find(t => t.ticker === targetSymbol);\n    if (sentimentObj) {\n        totalNewsScore += parseFloat(sentimentObj.ticker_sentiment_score);\n        newsCount++;\n    }\n}\n\nconst avgNewsScore = newsCount > 0 ? (totalNewsScore / newsCount) : 0;\nlet avgNewsScoreDefinition = '';\n\nif (avgNewsScore <= -0.35) {\n  avgNewsScoreDefinition = 'Bearish';\n} else if (avgNewsScore <= -0.15 && avgNewsScore > -0.35) {\n  avgNewsScoreDefinition = 'Somewhat Bearish';\n} else if (avgNewsScore < 0.15 && avgNewsScore > -0.15) {\n  avgNewsScoreDefinition = 'Neutral';\n} else if (avgNewsScore < 0.35 && avgNewsScore >= 0.15) {\n  avgNewsScoreDefinition = 'Somewhat Bullish';\n} else if (avgNewsScore >= 0.35) {\n  avgNewsScoreDefinition = 'Bullish';\n}\n\nreturn {\n  json: {\n    symbol: targetSymbol,\n    fund_and_ta_score: taScoreModel.item.json,\n    news_sentiment: avgNewsScore.toFixed(3),\n    news_sentiment_definition: avgNewsScoreDefinition\n  }\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4320,
+        -240
+      ],
+      "id": "ce62efa4-ae11-42a8-becc-550b589d66bc",
+      "name": "Calculate average sentiment score"
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3584,
+        -928
+      ],
+      "id": "68c69357-86bd-4e8f-9a7f-ad89de4f669c",
+      "name": "Wait5",
+      "webhookId": "f55c4c6b-bd31-4552-8059-c09e74969006"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Get all articles returned by the RSS node\nconst symbol = $(\"Calculate TA Score\").first().json.symbol;\n\n\n// 2. Build a single \"Master String\" for the AI\n// We include Title + Content Snippet + Date\nlet fullContext = `Recent News for ${symbol}:\\n\\n`;\n\n$(\"RSS Read: Yahoo Finance News\").all().forEach((item, index) => {\n    const title = item.json.title || \"No Title\";\n    // Yahoo often puts the good stuff in 'contentSnippet' or 'content'\n    const desc = item.json.contentSnippet || item.json.content || \"\";\n    const date = item.json.pubDate || \"\";\n    \n    fullContext += `${index + 1}. TITLE: ${title}\\n`;\n    fullContext += `   SUMMARY: ${desc}\\n`;\n    fullContext += `   DATE: ${date}\\n`;\n    fullContext += `   ---\\n`;\n});\n\n// 3. Return ONE item (so OpenAI runs only once)\nreturn {\n    json: {\n        symbol: symbol,\n        news_context: fullContext\n    }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4032,
+        -528
+      ],
+      "id": "20328f23-4eb1-4314-9f3b-8525d1ea1ced",
+      "name": "Aggregate Yahoo Finance News"
+    },
+    {
+      "parameters": {
+        "url": "=https://feeds.finance.yahoo.com/rss/2.0/headline?s={{$json.symbol}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        3808,
+        -528
+      ],
+      "id": "f791d29a-50ac-45e5-b82c-b8da032c256f",
+      "name": "RSS Read: Yahoo Finance News"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a sophisticated financial analyst. \nYou are provided with a list of recent news articles (Titles and Summaries) for a specific stock.\n\nYour Goal: Analyze the *content* of the news to determine the sentiment and specific catalysts.\n- If a stock falls because of \"General Market Moves\" (e.g., Fed Rates), it might be a buying opportunity.\n- If a stock falls because of \"Competitor News\" (e.g., Google vs Nvidia) or \"Lawsuits\", it is a specific risk.\n\nReturn ONLY a JSON object:\n{\n  \"sentiment_score\": 0.0, // -1.0 (Bearish) to 1.0 (Bullish)\n  \"primary_driver\": \"What is moving the price? (e.g. Earnings, Macro, Competitor Product)\",\n  \"risk_flag\": \"Any specific red flags? (e.g. Lawsuit, Downgrade)\"\n}\n\nhere is the news for {{ $json.symbol }}:\n{{ $json.news_context }}\n\nIgnore general market news about other FAANG stocks unless they directly name the target stock {{$json.symbol}} as a partner or competitor.\"",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are a sophisticated financial analyst.  You are provided with a list of recent news articles (Titles and Summaries) for a specific stock."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        4256,
+        -640
+      ],
+      "id": "c5ef01b8-1fb8-4d8a-aa63-7c7ccca2f6c6",
+      "name": "Basic LLM Chain",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        4336,
+        -416
+      ],
+      "id": "473c18ac-d81f-4eaa-bfd4-d2f88b0a1339",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "1Xpgh4WAXfmNTYRy",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// 1. Get the raw text output from the LLM\n// Note: Check your previous node's output name. It might be 'text', 'message.content', or 'output'.\n// Based on your snippet, it looks like 'text'.\nconst rawContent = $json.text || \"\";\n\nconsole.log($('Calculate TA Score').item.json.symbol);\n\n// 2. Clean up the string\n// Remove markdown wrappers like ```json and ``` that LLMs love to add\nlet cleanJson = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();\n\n// 3. Parse it into a real object\ntry {\n    // This turns the string \"{\\n \\\"sentiment_score\\\": ...}\" into a real object\n    const parsedData = JSON.parse(cleanJson);\n\n    // 4. Return the clean data to the flow\n    return {\n        json: {\n            // Keep the symbol for the next step\n            symbol: $json.symbol,\n            yahoo_finance_news_sentiment: { ...parsedData, sentiment_score_description: '-1 = Bearish; 1 = Bullish, 0 = Neutral' },\n            fundamentals_and_TA_scope: $json.fund_and_ta_score,\n            alpha_vantage_news: {\n              news_sentiment: $json.news_sentiment,\n              news_sentiment_definition: $json.news_sentiment_definition\n            },\n            twitterInsights: $json.twitterInsights,\n            analystsInsights: {\n             analystsEstimates: $json.analystEstimates,\n             consensus: $json.gradeConsensus,\n             priceTargetConsensus: $json.priceTargetConsensus\n            }\n            // Spread the parsed fields (sentiment_score, primary_driver, risk_flag)\n            \n        }\n    };\n} catch (error) {\n    // If the LLM messed up the syntax, return a safe default so the workflow doesn't crash\n    return {\n        json: {\n            symbol: $json.symbol,\n            sentiment_score: 0,\n            primary_driver: \"Error Parsing AI Response\",\n            risk_flag: \"Manual Check Required\",\n            error: error.message,\n            raw_output: rawContent // Keep this to debug later\n        }\n    };\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4832,
+        -560
+      ],
+      "id": "d2963531-41ee-409d-8332-e5b6be3db16d",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "url": "https://api.stocktwits.com/api/2/streams/symbol/NVDA.json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Cookie",
+              "value": "__cf_bm=zYRdreiQNzp_kqUlv6pxlewbeXtygfNS40djxvQFV4s-1764111358-1.0.1.1-Dr8jLAJkjtpzAbmt12LG5scZq13cf.usAcIha7b0hOpnfS_SWmLtV7AUXnbI.6S7ldWWD4BeXztaxYXRMv7a9kgSz92vrjkeaeZG7SKTu0s; _cfuvid=MXwRHnLm6uUqtaml1JBWs.SKfTVJufhzQJRQmiNNe1Y-1764103117590-0.0.1.1-604800000"
+            },
+            {
+              "name": "User-Agent",
+              "value": "PostmanRuntime/7.49.1"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        -1856
+      ],
+      "id": "b3a9eece-29f8-4cdd-83f1-becbef1a8a94",
+      "name": "Stocktwits"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.x.ai/v1/responses",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"input\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a financial analyst. Use the x_search tool to find the latest real-time sentiment for the given stock on X (Twitter). Return a JSON with sentiment_score (-1.0 to 1.0) and a 1-sentence summary.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Analyze the sentiment for ${{$json.symbol}}\"\n    }\n  ],\n  \"model\": \"grok-4-1-fast-reasoning\",\n  \"tools\": [\n        {\n            \"type\": \"x_search\"\n        }\n    ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4032,
+        -832
+      ],
+      "id": "3bff91eb-4d06-43ed-91f8-147136786f49",
+      "name": "xAI Grok x-search",
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "qimv3nL8XR5ugzr5",
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// 1. Find the message part of the response\nconst symbol = $(\"Calculate TA Score\").first().json.symbol;\n\nconst outputs = $json.output || [];\nconst messageItem = outputs.find(item => item.type === 'message');\n\n// 2. Extract the text string\nconst rawText = messageItem.content[0].text;\n\n// 3. Clean up (just in case it adds markdown) and Parse\nconst cleanText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();\n\ntry {\n    const parsedData = JSON.parse(cleanText);\n    \n    return {\n        json: {\n          twitterInsights: {\n            symbol: symbol, // You might want to pass this from previous node\n            x_sentiment_score: parsedData.sentiment_score,\n            x_summary: parsedData.summary,\n            x_citations: outputs.find(o => o.type === 'message')?.content[0]?.annotations?.map(x => x.url) || null,\n            x_citations_count: outputs.find(o => o.type === 'message')?.content[0]?.annotations?.length || 0\n\n          }\n        }\n    };\n} catch (error) {\n    return {\n        json: {\n          twitterInsights: {\n            error: \"Failed to parse Grok JSON\",\n            raw_output: rawText\n          }\n        }\n    };\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4320,
+        -832
+      ],
+      "id": "7f04b45e-5212-4cfb-8e47-cd4aea53f429",
+      "name": "Map xAI Response"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "numberInputs": 3,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3136,
+        -944
+      ],
+      "id": "814110e4-2371-4df5-8f22-42f837f5720d",
+      "name": "Merge TA data"
+    },
+    {
+      "parameters": {
+        "url": "https://financialmodelingprep.com/stable/price-target-consensus",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "=symbol",
+              "value": "={{$json.symbol}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3808,
+        -1024
+      ],
+      "id": "eaa4f2b7-1bf4-4563-9ae4-644bf865b2b3",
+      "name": "FMP: Get Price Target Consensus",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "P2d46j0t1plJJvL7",
+          "name": "Query Auth FMP"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://financialmodelingprep.com/stable/grades-consensus",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "=symbol",
+              "value": "={{$json.symbol}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3808,
+        -1216
+      ],
+      "id": "92f243e3-6fa4-442c-b64a-40efc7cda571",
+      "name": "FMP: Get Grade Consensus",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "P2d46j0t1plJJvL7",
+          "name": "Query Auth FMP"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://financialmodelingprep.com/stable/analyst-estimates",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "=symbol",
+              "value": "={{$json.symbol}}"
+            },
+            {
+              "name": "period",
+              "value": "annual"
+            },
+            {
+              "name": "limit",
+              "value": "10"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3808,
+        -1408
+      ],
+      "id": "748141e0-28b5-4ab1-b3df-dcf1bab43cf7",
+      "name": "FMP: Get Analyst Estimates",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "P2d46j0t1plJJvL7",
+          "name": "Query Auth FMP"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "if ($input.first().json.error) {\n  return {\n    json: { analystEstimates: \"paid subscription is required for this asset\" },\n  };\n}\n\n// Input: The array of estimates from FMP\n// Note: FMP usually returns them sorted by date. We need to find \"Next Year\".\nconst estimates = $input.all();\nconst currentYear = new Date().getFullYear();\n\n// 1. Find the forecast for Next Year (e.g., 2026) and the Year After\nconst nextYearEst = estimates.find(\n  (e) => new Date(e.json.date).getFullYear() === currentYear + 1,\n);\nconst currentYearEst = estimates.find(\n  (e) => new Date(e.json.date).getFullYear() === currentYear,\n);\n\nlet growthScore = 0;\nlet forwardPE = 0;\nlet growthRate = 0;\n\nif (nextYearEst && currentYearEst) {\n  // A. Calculate Revenue Growth %\n  const revenueGrowth =\n    ((nextYearEst.json.revenueAvg - currentYearEst.json.revenueAvg) /\n      currentYearEst.json.revenueAvg) *\n    100;\n  growthRate = revenueGrowth;\n\n  // B. Score the Growth\n  if (revenueGrowth > 20)\n    growthScore += 30; // Hyper Growth\n  else if (revenueGrowth > 10)\n    growthScore += 20; // Solid Growth\n  else if (revenueGrowth > 0)\n    growthScore += 5; // Slow Growth\n  else growthScore -= 20; // Shrinking (Red Flag!)\n\n  // C. Calculate Forward P/E (Valuation)\n  // Assume we have 'currentPrice' from previous TwelveData node\n  const currentPrice = $(\"Calculate TA Score\").first().json.details.price;\n\n  if (nextYearEst.json.epsAvg > 0) {\n    forwardPE = currentPrice / nextYearEst.json.epsAvg;\n\n    // Bonus: If Forward P/E is lower than Trailing P/E, the stock is getting \"cheaper\"\n    if (forwardPE < 30) growthScore += 10;\n  }\n}\n\n// 3. Return the new data\nreturn {\n  json: {\n    analystEstimates: {\n      symbol: $input.first().json.symbol,\n      forward_growth_projected: growthRate.toFixed(2) + \"%\",\n      forward_pe: forwardPE.toFixed(2),\n      growth_score: growthScore,\n    }\n  }\n};\n\n// return {\n//         json: {\n//           analystEstimates: $input.all()\n//         }\n//     };\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4032,
+        -1408
+      ],
+      "id": "17152e06-4962-4d3a-a3dd-400020e5d7b1",
+      "name": "Map Analyst-Estimates"
+    },
+    {
+      "parameters": {
+        "jsCode": "return {\n        json: {\n          gradeConsensus: $input.first().json.error ? 'paid subscription is required for this asset' : $input.all()\n        }\n    }; "
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4032,
+        -1216
+      ],
+      "id": "507efc60-0506-4bd8-9272-fe4861a29ae5",
+      "name": "Map Grade Consensus"
+    },
+    {
+      "parameters": {
+        "jsCode": "return {\n        json: {\n          priceTargetConsensus: $input.first().json.error ? 'paid subscription is required for this asset' : $input.all()\n        }\n    }; "
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4032,
+        -1024
+      ],
+      "id": "205b577c-417f-41c4-ae3d-d84d86591ae5",
+      "name": "Map Price Target Consensus"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "numberInputs": 3,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        4320,
+        -1232
+      ],
+      "id": "51a061e2-9615-4fe1-8ed0-e49015986196",
+      "name": "Merge FMP Data"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "numberInputs": 4,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        4608,
+        -592
+      ],
+      "id": "f147f168-cbfa-4184-aafd-823ca67e77f6",
+      "name": "Merge final model"
+    },
+    {
+      "parameters": {
+        "jsCode": "var sss = [\n  {\n    \"symbol\": \"NVDA\",\n    \"yahoo_finance_news_sentiment\": {\n      \"sentiment_score\": -0.4,\n      \"primary_driver\": \"Geopolitical and Competitive Risks Related to China Ban and Meta-Google Chip Talks\",\n      \"risk_flag\": \"Chinese regulatory ban on Nvidia AI chips, escalating U.S.-China tech tensions; Meta potentially sourcing AI chips from Google, threatening Nvidia's market dominance\",\n      \"sentiment_score_description\": \"-1 = Bearish; 1 = Bullish, 0 = Neutral\"\n    },\n    \"fundamentals_and_TA_scope\": {\n      \"symbol\": \"NVDA\",\n      \"total_score\": 75,\n      \"fundamental_score\": 45,\n      \"technical_score\": 30,\n      \"signals\": \"Uptrend (Above EMA200)\",\n      \"details\": {\n        \"price\": 177.82,\n        \"rsi\": \"41.53\",\n        \"macd\": \"-2.2692\",\n        \"ema_200\": \"161.72\",\n        \"pe\": \"44.72\"\n      }\n    },\n    \"alpha_vantage_news\": {\n      \"news_sentiment\": \"0.147\",\n      \"news_sentiment_definition\": \"Neutral\"\n    },\n    \"twitterInsights\": {\n      \"symbol\": \"NVDA\",\n      \"x_sentiment_score\": -0.35,\n      \"x_summary\": \"Sentiment on $NVDA is mixed but leaning bearish in the short term due to news of Meta considering Google TPUs, Chinese regulators blocking ByteDance from using NVIDIA chips, and recent stock price declines, though long-term AI dominance remains a bullish theme.\",\n      \"x_citations\": [\n        \"https://x.com/i/status/1993259550544191645\",\n        \"https://x.com/i/status/1993408428279038089\",\n        \"https://x.com/i/status/1993675996843982977\",\n        \"https://x.com/i/status/1993675607767408997\",\n        \"https://x.com/i/status/1993675932830474252\",\n        \"https://x.com/i/status/1993675621357043845\",\n        \"https://x.com/i/status/1993411722385014931\",\n        \"https://x.com/i/status/1993675761170227633\",\n        \"https://x.com/i/status/1993675623483814040\",\n        \"https://x.com/i/status/1993675602587693086\",\n        \"https://x.com/i/status/1991897230102646954\",\n        \"https://x.com/i/status/1991642967333806238\",\n        \"https://x.com/i/status/1993002706710282397\",\n        \"https://x.com/i/status/1993296581064638754\",\n        \"https://x.com/i/status/1993675881571836072\",\n        \"https://x.com/i/status/1993676037767700793\",\n        \"https://x.com/i/status/1993346219960418535\",\n        \"https://x.com/i/status/1993373199187526009\",\n        \"https://x.com/i/status/1993355408279584998\",\n        \"https://x.com/i/status/1991280476653269295\",\n        \"https://x.com/i/status/1992957141884485967\",\n        \"https://x.com/i/status/1993334347911643574\",\n        \"https://x.com/i/status/1993458406556881139\",\n        \"https://x.com/i/status/1993363188922941886\",\n        \"https://x.com/i/status/1993676133444047193\",\n        \"https://x.com/i/status/1993343990834643414\",\n        \"https://x.com/i/status/1993402727712588106\",\n        \"https://x.com/i/status/1993260157875245234\",\n        \"https://x.com/i/status/1991521444787023928\",\n        \"https://x.com/i/status/1992267587204293116\",\n        \"https://x.com/i/status/1991446647327367490\",\n        \"https://x.com/i/status/1993338603846639954\",\n        \"https://x.com/i/status/1993347832942608424\",\n        \"https://x.com/i/status/1992714993205190760\",\n        \"https://x.com/i/status/1992352784776323542\",\n        \"https://x.com/i/status/1993676134278668707\",\n        \"https://x.com/i/status/1993675699975242009\",\n        \"https://x.com/i/status/1993675618983231602\",\n        \"https://x.com/i/status/1993365596512403875\",\n        \"https://x.com/i/status/1993675724205744303\",\n        \"https://x.com/i/status/1992441973911834721\",\n        \"https://x.com/i/status/1993675831273783651\",\n        \"https://x.com/i/status/1993675863142096902\",\n        \"https://x.com/i/status/1993334792189100235\",\n        \"https://x.com/i/status/1991381749822296542\",\n        \"https://x.com/i/status/1992631668968968609\",\n        \"https://x.com/i/status/1993675804526727180\",\n        \"https://x.com/i/status/1991567461062254732\",\n        \"https://x.com/i/status/1993676269704368174\",\n        \"https://x.com/i/status/1992739875377045686\",\n        \"https://x.com/i/status/1993675611018346769\",\n        \"https://x.com/i/status/1993675557872226798\",\n        \"https://x.com/i/status/1993675755595895257\",\n        \"https://x.com/i/status/1993675615602667579\",\n        \"https://x.com/i/status/1991529623235039588\",\n        \"https://x.com/i/status/1991283545000890379\",\n        \"https://x.com/i/status/1993304835249390045\",\n        \"https://x.com/i/status/1993675837955330362\",\n        \"https://x.com/i/status/1993336058407534840\",\n        \"https://x.com/i/status/1991528734571262205\",\n        \"https://x.com/i/status/1993092844299456935\",\n        \"https://x.com/i/status/1993670124516393141\",\n        \"https://x.com/i/status/1993675632622891286\",\n        \"https://x.com/i/status/1993675738344771655\",\n        \"https://x.com/i/status/1993365839198986288\",\n        \"https://x.com/i/status/1993352283011399959\",\n        \"https://x.com/i/status/1992989340469805161\",\n        \"https://x.com/i/status/1993656933530894431\",\n        \"https://x.com/i/status/1993024435893551171\",\n        \"https://x.com/i/status/1993467296325714008\",\n        \"https://x.com/i/status/1993108099285258306\",\n        \"https://x.com/i/status/1993675964816220582\",\n        \"https://x.com/i/status/1993676111000334454\",\n        \"https://x.com/i/status/1993442255953359308\",\n        \"https://x.com/i/status/1993676046735229317\",\n        \"https://x.com/i/status/1992292103393595527\",\n        \"https://x.com/i/status/1993675859274969461\"\n      ],\n      \"x_citations_count\": 77\n    },\n    \n    \"analystsInsights\": {\n      \"analystsEstimates\": {\n        \"symbol\": \"NVDA\",\n        \"forward_growth_projected\": \"64.26%\",\n        \"forward_pe\": \"38.18\",\n        \"growth_score\": 30\n      },\n      \"consensus\": [\n        {\n          \"json\": {\n            \"symbol\": \"NVDA\",\n            \"strongBuy\": 2,\n            \"buy\": 58,\n            \"hold\": 16,\n            \"sell\": 3,\n            \"strongSell\": 0,\n            \"consensus\": \"Buy\"\n          },\n          \"pairedItem\": {\n            \"item\": 0\n          }\n        }\n      ],\n      \"priceTargetConsensus\": [\n        {\n          \"json\": {\n            \"symbol\": \"NVDA\",\n            \"targetHigh\": 352,\n            \"targetLow\": 200,\n            \"targetConsensus\": 261.77,\n            \"targetMedian\": 250\n          },\n          \"pairedItem\": {\n            \"item\": 0\n          }\n        }\n      ]\n    }\n  }\n];\n\n\n// Input: Your aggregated JSON list\nconst stocks = sss;\n\nlet htmlOutput = \"\";\n\nfor (const item of stocks) {\n    const data = item;\n    \n    // --- 1. DATA MAPPING ---\n    const sym = data.symbol;\n    const yahoo = data.yahoo_finance_news_sentiment || {};\n    const ta = data.fundamentals_and_TA_scope || {};\n    const av = data.alpha_vantage_news || {};\n    const twitter = data.twitterInsights || {};\n    const analysts = data.analystsInsights || {};\n    \n    // Nested Analyst Data\n    const est = analysts.analystsEstimates || {};\n    // Handle n8n's nested structure for consensus/targets (sometimes it wraps in .json)\n    const consRaw = (analysts.consensus && analysts.consensus[0]) ? (analysts.consensus[0].json || analysts.consensus[0]) : {};\n    const targetRaw = (analysts.priceTargetConsensus && analysts.priceTargetConsensus[0]) ? (analysts.priceTargetConsensus[0].json || analysts.priceTargetConsensus[0]) : {};\n\n    // --- 2. FORMATTING HELPERS ---\n    // Color circles based on score\n    const getMood = (score) => {\n        const s = parseFloat(score);\n        if (s > 0.2) return \"🟢\";\n        if (s < -0.2) return \"🔴\";\n        return \"⚪\";\n    };\n\n    // Top 5 Twitter Links\n    let twitterLinks = \"\";\n    if (twitter.x_citations && Array.isArray(twitter.x_citations)) {\n        twitterLinks = twitter.x_citations.slice(0, 5).map((link, i) => {\n            return `<a href=\"${link}\">[${i+1}]</a>`;\n        }).join(\" \");\n    }\n\n    // --- 3. BUILD HTML STRING ---\n    htmlOutput += `<b>📊 ANALYSIS: ${sym}</b> (Score: ${ta.total_score || 'N/A'}/100)\\n`;\n    \n    // A. Fundamentals & TA (Compact Line)\n    htmlOutput += `💰 <b>Price:</b> $${ta.details?.price} | <b>P/E:</b> ${ta.details?.pe} | <b>RSI:</b> ${ta.details?.rsi}\\n`;\n    htmlOutput += `📈 <b>Tech Signal:</b> ${ta.signals || 'N/A'} (Score: ${ta.technical_score})\\n`;\n\n    // B. Yahoo News (AI Context)\n    htmlOutput += `${getMood(yahoo.sentiment_score)} <b>News (${yahoo.sentiment_score}):</b> ${yahoo.primary_driver || 'N/A'}\\n`;\n    if (yahoo.risk_flag && !yahoo.risk_flag.includes(\"None\")) {\n        htmlOutput += `⚠️ <i>Risk: ${yahoo.risk_flag}</i>\\n`;\n    }\n\n    // C. Alpha Vantage & Twitter (Social)\n    htmlOutput += `🗞 <b>AlphaVantage:</b> ${av.news_sentiment} (${av.news_sentiment_definition})\\n`;\n    htmlOutput += `${getMood(twitter.x_sentiment_score)} <b>X (Twitter):</b> Score ${twitter.x_sentiment_score} (${twitter.x_citations_count} citations)\\n`;\n    htmlOutput += `<i>\"${twitter.x_summary || 'No summary'}\"</i>\\n`;\n    if (twitterLinks) htmlOutput += `🔗 Sources: ${twitterLinks}\\n`;\n\n    // D. Analysts (Wall St. View)\nif (consRaw.consensus) {\n    htmlOutput += `👨‍💼 <b>Analysts:</b> Consensus <b>${consRaw.consensus || 'N/A'}</b> (B:${consRaw.buy || 0} H:${consRaw.hold || 0} S:${consRaw.sell || 0})\\n`;\n    htmlOutput += `🎯 <b>Targets:</b> Low $${targetRaw.targetLow} | Avg $${targetRaw.targetConsensus} | High $${targetRaw.targetHigh}\\n`;\n    htmlOutput += `🚀 <b>Growth '26:</b> ${est.forward_growth_projected} (Fwd P/E: ${est.forward_pe})\\n\\n`;\n}\n    \n    htmlOutput += `--------------------------------\\n\\n`;\n}\n\n// Output specifically for the Telegram Node\nreturn {\n    json: {\n        html_message: htmlOutput\n    }\n};\n\n\n\n\n\n\n\n\n\n\n\nreturn sss;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        -1632
+      ],
+      "id": "9ef0b72f-8b76-4739-b07f-8f5b86d85302",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "chatId": "455634904",
+        "text": "={{ $json.html_message }}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        224,
+        -1632
+      ],
+      "id": "adbba47d-ee88-45ba-b6bf-3d8aaa24f406",
+      "name": "Send a summary1",
+      "webhookId": "4c36dfd2-f836-4090-b067-73a074cb0578",
+      "credentials": {
+        "telegramApi": {
+          "id": "jR5j9qirgmGELzO5",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const stocks = [$json];\n\nlet htmlOutput = \"\";\n\nfor (const item of stocks) {\n  const data = item;\n\n  // --- 1. DATA MAPPING ---\n  const sym = data.symbol;\n  const yahoo = data.yahoo_finance_news_sentiment || {};\n  const ta = data.fundamentals_and_TA_scope || {};\n  const av = data.alpha_vantage_news || {};\n  const twitter = data.twitterInsights || {};\n  const analysts = data.analystsInsights || {};\n\n  // Nested Analyst Data\n  const est = analysts.analystsEstimates || {};\n  // Handle n8n's nested structure for consensus/targets (sometimes it wraps in .json)\n  const consRaw =\n    analysts.consensus && analysts.consensus[0]\n      ? analysts.consensus[0].json || analysts.consensus[0]\n      : {};\n  const targetRaw =\n    analysts.priceTargetConsensus && analysts.priceTargetConsensus[0]\n      ? analysts.priceTargetConsensus[0].json ||\n        analysts.priceTargetConsensus[0]\n      : {};\n\n  // --- 2. FORMATTING HELPERS ---\n  // Color circles based on score\n  const getMood = (score) => {\n    const s = parseFloat(score);\n    if (s > 0.2) return \"🟢\";\n    if (s < -0.2) return \"🔴\";\n    return \"⚪\";\n  };\n\n  // Top 5 Twitter Links\n  let twitterLinks = \"\";\n  if (twitter.x_citations && Array.isArray(twitter.x_citations)) {\n    twitterLinks = twitter.x_citations\n      .slice(0, 5)\n      .map((link, i) => {\n        return `<a href=\"${link}\">[${i + 1}]</a>`;\n      })\n      .join(\" \");\n  }\n\n  // --- 3. BUILD HTML STRING ---\n  htmlOutput += `<b>📊 Researched Ticker: ${sym}</b> (Score: ${ta.total_score || \"N/A\"}/100)\\n`;\n\n  // A. Fundamentals & TA (Compact Line)\n  htmlOutput += `💰 <b>Price:</b> $${ta.details?.price} | <b>P/E:</b> ${ta.details?.pe} | <b>RSI:</b> ${ta.details?.rsi}\\n`;\n  htmlOutput += `📈 <b>Tech Signal:</b> ${ta.signals || \"N/A\"} (Score: ${ta.technical_score})\\n`;\n\n  // B. Yahoo News (AI Context)\n  htmlOutput += `${getMood(yahoo.sentiment_score)} <b>News (${yahoo.sentiment_score}):</b> ${yahoo.primary_driver || \"N/A\"}\\n`;\n  if (yahoo.risk_flag && !yahoo.risk_flag.includes(\"None\")) {\n    htmlOutput += `⚠️ <i>Risk: ${yahoo.risk_flag}</i>\\n`;\n  }\n\n  // C. Alpha Vantage & Twitter (Social)\n  htmlOutput += `🗞 <b>AlphaVantage:</b> ${av.news_sentiment} (${av.news_sentiment_definition})\\n`;\n  htmlOutput += `${getMood(twitter.x_sentiment_score)} <b>X (Twitter):</b> Score ${twitter.x_sentiment_score} (${twitter.x_citations_count} citations)\\n`;\n  htmlOutput += `<i>\"${twitter.x_summary || \"No summary\"}\"</i>\\n`;\n  if (twitterLinks) htmlOutput += `🔗 Sources: ${twitterLinks}\\n`;\n\n  // D. Analysts (Wall St. View)\n  if (consRaw.consensus) {\n    htmlOutput += `👨‍💼 <b>Analysts:</b> Consensus <b>${consRaw.consensus || \"N/A\"}</b> (B:${consRaw.buy || 0} H:${consRaw.hold || 0} S:${consRaw.sell || 0})\\n`;\n    htmlOutput += `🎯 <b>Targets:</b> Low $${targetRaw.targetLow} | Avg $${targetRaw.targetConsensus} | High $${targetRaw.targetHigh}\\n`;\n    htmlOutput += `🚀 <b>Growth '26:</b> ${est.forward_growth_projected} (Fwd P/E: ${est.forward_pe})\\n\\n`;\n  }\n\n  htmlOutput += `--------------------------------\\n\\n`;\n}\n\n// Output specifically for the Telegram Node\nreturn {\n  json: {\n    html_message: htmlOutput,\n  },\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5056,
+        -560
+      ],
+      "id": "c813021f-f3f8-4f66-b16d-b9620357c607",
+      "name": "Format to HTML"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Get Fear&Greed Index",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get S&P500 tickers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get S&P500 tickers": {
+      "main": [
+        [
+          {
+            "node": "Filter Technology Stocks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Fear&Greed Index": {
+      "main": [
+        []
+      ]
+    },
+    "Filter Technology Stocks": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finnhub: Get Fundamentals": {
+      "main": [
+        [
+          {
+            "node": "Calculate Fundamental Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Fundamental Score": {
+      "main": [
+        [
+          {
+            "node": "Filter fundamentally risky stocks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Finnhub: Get Fundamentals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get TA data: RSI": {
+      "main": [
+        [
+          {
+            "node": "Map to rsi_data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map to rsi_data": {
+      "main": [
+        [
+          {
+            "node": "Merge TA data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Get TA data: MACD": {
+      "main": [
+        [
+          {
+            "node": "Map to macd_data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get TA data: EMA": {
+      "main": [
+        [
+          {
+            "node": "Map to ema_data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map to ema_data": {
+      "main": [
+        [
+          {
+            "node": "Merge TA data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map to macd_data": {
+      "main": [
+        [
+          {
+            "node": "Merge TA data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Filter fundamentally risky stocks": {
+      "main": [
+        [
+          {
+            "node": "Merge Metrics and Quote",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "Wait4",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate TA Score": {
+      "main": [
+        [
+          {
+            "node": "Wait5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finnhub: Get Quote": {
+      "main": [
+        [
+          {
+            "node": "Merge Metrics and Quote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Metrics and Quote": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Wait2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Wait3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Get TA data: EMA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait2": {
+      "main": [
+        [
+          {
+            "node": "Get TA data: MACD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait3": {
+      "main": [
+        [
+          {
+            "node": "Get TA data: RSI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait4": {
+      "main": [
+        [
+          {
+            "node": "Finnhub: Get Quote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a summary": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AlphaVantage: Get News & Sentiment": {
+      "main": [
+        [
+          {
+            "node": "Calculate average sentiment score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate average sentiment score": {
+      "main": [
+        [
+          {
+            "node": "Merge final model",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Wait5": {
+      "main": [
+        [
+          {
+            "node": "AlphaVantage: Get News & Sentiment",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS Read: Yahoo Finance News",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "xAI Grok x-search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "FMP: Get Grade Consensus",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "FMP: Get Price Target Consensus",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "FMP: Get Analyst Estimates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS Read: Yahoo Finance News": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Yahoo Finance News",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Yahoo Finance News": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Merge final model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "xAI Grok x-search": {
+      "main": [
+        [
+          {
+            "node": "Map xAI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map xAI Response": {
+      "main": [
+        [
+          {
+            "node": "Merge final model",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge TA data": {
+      "main": [
+        [
+          {
+            "node": "Calculate TA Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FMP: Get Analyst Estimates": {
+      "main": [
+        [
+          {
+            "node": "Map Analyst-Estimates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FMP: Get Grade Consensus": {
+      "main": [
+        [
+          {
+            "node": "Map Grade Consensus",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FMP: Get Price Target Consensus": {
+      "main": [
+        [
+          {
+            "node": "Map Price Target Consensus",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Analyst-Estimates": {
+      "main": [
+        [
+          {
+            "node": "Merge FMP Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Grade Consensus": {
+      "main": [
+        [
+          {
+            "node": "Merge FMP Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Map Price Target Consensus": {
+      "main": [
+        [
+          {
+            "node": "Merge FMP Data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge FMP Data": {
+      "main": [
+        [
+          {
+            "node": "Merge final model",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Merge final model": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Format to HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Send a summary1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format to HTML": {
+      "main": [
+        [
+          {
+            "node": "Send a summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "5464c30a-05c6-402a-9c8d-98f3b8b98120",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0b89605a61b6eeef8f6b05c6fd13dd2c50e6e09602e476e5a33572c8f2874e2a"
+  },
+  "id": "dtBk9Tz8lwaXZrrM",
+  "tags": []
+}
