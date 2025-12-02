@@ -495,7 +495,7 @@
     },
     {
       "parameters": {
-        "chatId": "455634904",
+        "chatId": "",
         "text": "={{ $json.html_message }}",
         "additionalFields": {
           "parse_mode": "HTML"
@@ -674,33 +674,6 @@
       ],
       "id": "d2963531-41ee-409d-8332-e5b6be3db16d",
       "name": "Code in JavaScript"
-    },
-    {
-      "parameters": {
-        "url": "https://api.stocktwits.com/api/2/streams/symbol/NVDA.json",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Cookie",
-              "value": "__cf_bm=zYRdreiQNzp_kqUlv6pxlewbeXtygfNS40djxvQFV4s-1764111358-1.0.1.1-Dr8jLAJkjtpzAbmt12LG5scZq13cf.usAcIha7b0hOpnfS_SWmLtV7AUXnbI.6S7ldWWD4BeXztaxYXRMv7a9kgSz92vrjkeaeZG7SKTu0s; _cfuvid=MXwRHnLm6uUqtaml1JBWs.SKfTVJufhzQJRQmiNNe1Y-1764103117590-0.0.1.1-604800000"
-            },
-            {
-              "name": "User-Agent",
-              "value": "PostmanRuntime/7.49.1"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        0,
-        -1856
-      ],
-      "id": "b3a9eece-29f8-4cdd-83f1-becbef1a8a94",
-      "name": "Stocktwits"
     },
     {
       "parameters": {
@@ -932,43 +905,6 @@
       ],
       "id": "f147f168-cbfa-4184-aafd-823ca67e77f6",
       "name": "Merge final model"
-    },
-    {
-      "parameters": {
-        "jsCode": "var sss = [\n  {\n    \"symbol\": \"NVDA\",\n    \"yahoo_finance_news_sentiment\": {\n      \"sentiment_score\": -0.4,\n      \"primary_driver\": \"Geopolitical and Competitive Risks Related to China Ban and Meta-Google Chip Talks\",\n      \"risk_flag\": \"Chinese regulatory ban on Nvidia AI chips, escalating U.S.-China tech tensions; Meta potentially sourcing AI chips from Google, threatening Nvidia's market dominance\",\n      \"sentiment_score_description\": \"-1 = Bearish; 1 = Bullish, 0 = Neutral\"\n    },\n    \"fundamentals_and_TA_scope\": {\n      \"symbol\": \"NVDA\",\n      \"total_score\": 75,\n      \"fundamental_score\": 45,\n      \"technical_score\": 30,\n      \"signals\": \"Uptrend (Above EMA200)\",\n      \"details\": {\n        \"price\": 177.82,\n        \"rsi\": \"41.53\",\n        \"macd\": \"-2.2692\",\n        \"ema_200\": \"161.72\",\n        \"pe\": \"44.72\"\n      }\n    },\n    \"alpha_vantage_news\": {\n      \"news_sentiment\": \"0.147\",\n      \"news_sentiment_definition\": \"Neutral\"\n    },\n    \"twitterInsights\": {\n      \"symbol\": \"NVDA\",\n      \"x_sentiment_score\": -0.35,\n      \"x_summary\": \"Sentiment on $NVDA is mixed but leaning bearish in the short term due to news of Meta considering Google TPUs, Chinese regulators blocking ByteDance from using NVIDIA chips, and recent stock price declines, though long-term AI dominance remains a bullish theme.\",\n      \"x_citations\": [\n        \"https://x.com/i/status/1993259550544191645\",\n        \"https://x.com/i/status/1993408428279038089\",\n        \"https://x.com/i/status/1993675996843982977\",\n        \"https://x.com/i/status/1993675607767408997\",\n        \"https://x.com/i/status/1993675932830474252\",\n        \"https://x.com/i/status/1993675621357043845\",\n        \"https://x.com/i/status/1993411722385014931\",\n        \"https://x.com/i/status/1993675761170227633\",\n        \"https://x.com/i/status/1993675623483814040\",\n        \"https://x.com/i/status/1993675602587693086\",\n        \"https://x.com/i/status/1991897230102646954\",\n        \"https://x.com/i/status/1991642967333806238\",\n        \"https://x.com/i/status/1993002706710282397\",\n        \"https://x.com/i/status/1993296581064638754\",\n        \"https://x.com/i/status/1993675881571836072\",\n        \"https://x.com/i/status/1993676037767700793\",\n        \"https://x.com/i/status/1993346219960418535\",\n        \"https://x.com/i/status/1993373199187526009\",\n        \"https://x.com/i/status/1993355408279584998\",\n        \"https://x.com/i/status/1991280476653269295\",\n        \"https://x.com/i/status/1992957141884485967\",\n        \"https://x.com/i/status/1993334347911643574\",\n        \"https://x.com/i/status/1993458406556881139\",\n        \"https://x.com/i/status/1993363188922941886\",\n        \"https://x.com/i/status/1993676133444047193\",\n        \"https://x.com/i/status/1993343990834643414\",\n        \"https://x.com/i/status/1993402727712588106\",\n        \"https://x.com/i/status/1993260157875245234\",\n        \"https://x.com/i/status/1991521444787023928\",\n        \"https://x.com/i/status/1992267587204293116\",\n        \"https://x.com/i/status/1991446647327367490\",\n        \"https://x.com/i/status/1993338603846639954\",\n        \"https://x.com/i/status/1993347832942608424\",\n        \"https://x.com/i/status/1992714993205190760\",\n        \"https://x.com/i/status/1992352784776323542\",\n        \"https://x.com/i/status/1993676134278668707\",\n        \"https://x.com/i/status/1993675699975242009\",\n        \"https://x.com/i/status/1993675618983231602\",\n        \"https://x.com/i/status/1993365596512403875\",\n        \"https://x.com/i/status/1993675724205744303\",\n        \"https://x.com/i/status/1992441973911834721\",\n        \"https://x.com/i/status/1993675831273783651\",\n        \"https://x.com/i/status/1993675863142096902\",\n        \"https://x.com/i/status/1993334792189100235\",\n        \"https://x.com/i/status/1991381749822296542\",\n        \"https://x.com/i/status/1992631668968968609\",\n        \"https://x.com/i/status/1993675804526727180\",\n        \"https://x.com/i/status/1991567461062254732\",\n        \"https://x.com/i/status/1993676269704368174\",\n        \"https://x.com/i/status/1992739875377045686\",\n        \"https://x.com/i/status/1993675611018346769\",\n        \"https://x.com/i/status/1993675557872226798\",\n        \"https://x.com/i/status/1993675755595895257\",\n        \"https://x.com/i/status/1993675615602667579\",\n        \"https://x.com/i/status/1991529623235039588\",\n        \"https://x.com/i/status/1991283545000890379\",\n        \"https://x.com/i/status/1993304835249390045\",\n        \"https://x.com/i/status/1993675837955330362\",\n        \"https://x.com/i/status/1993336058407534840\",\n        \"https://x.com/i/status/1991528734571262205\",\n        \"https://x.com/i/status/1993092844299456935\",\n        \"https://x.com/i/status/1993670124516393141\",\n        \"https://x.com/i/status/1993675632622891286\",\n        \"https://x.com/i/status/1993675738344771655\",\n        \"https://x.com/i/status/1993365839198986288\",\n        \"https://x.com/i/status/1993352283011399959\",\n        \"https://x.com/i/status/1992989340469805161\",\n        \"https://x.com/i/status/1993656933530894431\",\n        \"https://x.com/i/status/1993024435893551171\",\n        \"https://x.com/i/status/1993467296325714008\",\n        \"https://x.com/i/status/1993108099285258306\",\n        \"https://x.com/i/status/1993675964816220582\",\n        \"https://x.com/i/status/1993676111000334454\",\n        \"https://x.com/i/status/1993442255953359308\",\n        \"https://x.com/i/status/1993676046735229317\",\n        \"https://x.com/i/status/1992292103393595527\",\n        \"https://x.com/i/status/1993675859274969461\"\n      ],\n      \"x_citations_count\": 77\n    },\n    \n    \"analystsInsights\": {\n      \"analystsEstimates\": {\n        \"symbol\": \"NVDA\",\n        \"forward_growth_projected\": \"64.26%\",\n        \"forward_pe\": \"38.18\",\n        \"growth_score\": 30\n      },\n      \"consensus\": [\n        {\n          \"json\": {\n            \"symbol\": \"NVDA\",\n            \"strongBuy\": 2,\n            \"buy\": 58,\n            \"hold\": 16,\n            \"sell\": 3,\n            \"strongSell\": 0,\n            \"consensus\": \"Buy\"\n          },\n          \"pairedItem\": {\n            \"item\": 0\n          }\n        }\n      ],\n      \"priceTargetConsensus\": [\n        {\n          \"json\": {\n            \"symbol\": \"NVDA\",\n            \"targetHigh\": 352,\n            \"targetLow\": 200,\n            \"targetConsensus\": 261.77,\n            \"targetMedian\": 250\n          },\n          \"pairedItem\": {\n            \"item\": 0\n          }\n        }\n      ]\n    }\n  }\n];\n\n\n// Input: Your aggregated JSON list\nconst stocks = sss;\n\nlet htmlOutput = \"\";\n\nfor (const item of stocks) {\n    const data = item;\n    \n    // --- 1. DATA MAPPING ---\n    const sym = data.symbol;\n    const yahoo = data.yahoo_finance_news_sentiment || {};\n    const ta = data.fundamentals_and_TA_scope || {};\n    const av = data.alpha_vantage_news || {};\n    const twitter = data.twitterInsights || {};\n    const analysts = data.analystsInsights || {};\n    \n    // Nested Analyst Data\n    const est = analysts.analystsEstimates || {};\n    // Handle n8n's nested structure for consensus/targets (sometimes it wraps in .json)\n    const consRaw = (analysts.consensus && analysts.consensus[0]) ? (analysts.consensus[0].json || analysts.consensus[0]) : {};\n    const targetRaw = (analysts.priceTargetConsensus && analysts.priceTargetConsensus[0]) ? (analysts.priceTargetConsensus[0].json || analysts.priceTargetConsensus[0]) : {};\n\n    // --- 2. FORMATTING HELPERS ---\n    // Color circles based on score\n    const getMood = (score) => {\n        const s = parseFloat(score);\n        if (s > 0.2) return \"🟢\";\n        if (s < -0.2) return \"🔴\";\n        return \"⚪\";\n    };\n\n    // Top 5 Twitter Links\n    let twitterLinks = \"\";\n    if (twitter.x_citations && Array.isArray(twitter.x_citations)) {\n        twitterLinks = twitter.x_citations.slice(0, 5).map((link, i) => {\n            return `<a href=\"${link}\">[${i+1}]</a>`;\n        }).join(\" \");\n    }\n\n    // --- 3. BUILD HTML STRING ---\n    htmlOutput += `<b>📊 ANALYSIS: ${sym}</b> (Score: ${ta.total_score || 'N/A'}/100)\\n`;\n    \n    // A. Fundamentals & TA (Compact Line)\n    htmlOutput += `💰 <b>Price:</b> $${ta.details?.price} | <b>P/E:</b> ${ta.details?.pe} | <b>RSI:</b> ${ta.details?.rsi}\\n`;\n    htmlOutput += `📈 <b>Tech Signal:</b> ${ta.signals || 'N/A'} (Score: ${ta.technical_score})\\n`;\n\n    // B. Yahoo News (AI Context)\n    htmlOutput += `${getMood(yahoo.sentiment_score)} <b>News (${yahoo.sentiment_score}):</b> ${yahoo.primary_driver || 'N/A'}\\n`;\n    if (yahoo.risk_flag && !yahoo.risk_flag.includes(\"None\")) {\n        htmlOutput += `⚠️ <i>Risk: ${yahoo.risk_flag}</i>\\n`;\n    }\n\n    // C. Alpha Vantage & Twitter (Social)\n    htmlOutput += `🗞 <b>AlphaVantage:</b> ${av.news_sentiment} (${av.news_sentiment_definition})\\n`;\n    htmlOutput += `${getMood(twitter.x_sentiment_score)} <b>X (Twitter):</b> Score ${twitter.x_sentiment_score} (${twitter.x_citations_count} citations)\\n`;\n    htmlOutput += `<i>\"${twitter.x_summary || 'No summary'}\"</i>\\n`;\n    if (twitterLinks) htmlOutput += `🔗 Sources: ${twitterLinks}\\n`;\n\n    // D. Analysts (Wall St. View)\nif (consRaw.consensus) {\n    htmlOutput += `👨‍💼 <b>Analysts:</b> Consensus <b>${consRaw.consensus || 'N/A'}</b> (B:${consRaw.buy || 0} H:${consRaw.hold || 0} S:${consRaw.sell || 0})\\n`;\n    htmlOutput += `🎯 <b>Targets:</b> Low $${targetRaw.targetLow} | Avg $${targetRaw.targetConsensus} | High $${targetRaw.targetHigh}\\n`;\n    htmlOutput += `🚀 <b>Growth '26:</b> ${est.forward_growth_projected} (Fwd P/E: ${est.forward_pe})\\n\\n`;\n}\n    \n    htmlOutput += `--------------------------------\\n\\n`;\n}\n\n// Output specifically for the Telegram Node\nreturn {\n    json: {\n        html_message: htmlOutput\n    }\n};\n\n\n\n\n\n\n\n\n\n\n\nreturn sss;"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        0,
-        -1632
-      ],
-      "id": "9ef0b72f-8b76-4739-b07f-8f5b86d85302",
-      "name": "Code in JavaScript1"
-    },
-    {
-      "parameters": {
-        "chatId": "455634904",
-        "text": "={{ $json.html_message }}",
-        "additionalFields": {
-          "parse_mode": "HTML"
-        }
-      },
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        224,
-        -1632
-      ],
-      "id": "adbba47d-ee88-45ba-b6bf-3d8aaa24f406",
-      "name": "Send a summary1",
-      "webhookId": "4c36dfd2-f836-4090-b067-73a074cb0578",
-      "credentials": {
-        "telegramApi": {
-          "id": "jR5j9qirgmGELzO5",
-          "name": "Telegram account"
-        }
-      }
     },
     {
       "parameters": {
@@ -1490,17 +1426,6 @@
         [
           {
             "node": "Format to HTML",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code in JavaScript1": {
-      "main": [
-        [
-          {
-            "node": "Send a summary1",
             "type": "main",
             "index": 0
           }
